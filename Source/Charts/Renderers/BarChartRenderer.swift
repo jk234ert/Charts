@@ -410,6 +410,36 @@ open class BarChartRenderer: BarLineScatterCandleBubbleRenderer
         // In case the chart is stacked, we need to accomodate individual bars within accessibilityOrdereredElements
         let isStacked = dataSet.isStacked
         let stackSize = isStacked ? dataSet.stackSize : 1
+        
+        func getIndicesOfTopBar() -> Set<Int>
+        {
+
+            if !(dataSet.roundRadiusWidthMultiplier > 0.0)
+            {
+                return Set()
+            }
+
+            var indices = Set<Int>()
+            for i in stride(from: 0, to: buffer.rects.count, by: stackSize)
+            {
+                let rects = Array(buffer.rects[i...i+stackSize - 1])
+
+                for index in (0..<rects.count).reversed()
+                {
+                    let rect = rects[index]
+
+                    if rect.height > 0 || index == 0
+                    {
+                        indices.insert(i + index)
+                        break
+                    }
+                }
+            }
+
+            return indices
+        }
+
+        let topRectIndices = Set(getIndicesOfTopBar())
 
         for j in stride(from: 0, to: buffer.rects.count, by: 1)
         {
@@ -427,11 +457,53 @@ open class BarChartRenderer: BarLineScatterCandleBubbleRenderer
             
             if !isSingleColor
             {
+                let fillColors = [dataSet.color(atIndex: 0).cgColor, dataSet.color(atIndex: 1).cgColor]
+                let locations:[CGFloat] = [0.0, 1.0]
+                context.saveGState()
+                if topRectIndices.contains(j) {
+                    var radius: CGFloat = barRect.width * dataSet.roundRadiusWidthMultiplier
+                    if radius > barRect.height, barRect.height > 0
+                    {
+                        radius = barRect.height * 0.999
+                    }
+
+                    let path = CGMutablePath()
+                    path.move(to: CGPoint(x: barRect.minX, y: barRect.maxY))
+                    path.addArc(tangent1End: CGPoint(x: barRect.minX, y: barRect.minY),
+                                tangent2End: CGPoint(x: barRect.maxX, y: barRect.minY),
+                                radius: radius)
+                    path.addArc(tangent1End: CGPoint(x: barRect.maxX, y: barRect.minY),
+                                tangent2End: CGPoint(x: barRect.maxX, y: barRect.maxY),
+                                radius: radius)
+                    path.addLine(to: CGPoint(x: barRect.maxX, y: barRect.maxY))
+
+                    context.addPath(path)
+//                    context.fillPath()
+                    context.clip()
+                } else {
+                    context.clip(to: barRect)
+                }
+                
+                let gradient:CGGradient
+                let colorspace:CGColorSpace
+                colorspace = CGColorSpaceCreateDeviceRGB()
+                
+                gradient = CGGradient(colorsSpace: colorspace, colors: fillColors as CFArray, locations: locations)!
+                
+                //Vertical Gradient
+                let startPoint:CGPoint = CGPoint(x: 0.0, y: viewPortHandler.contentBottom)
+                let endPoint:CGPoint = CGPoint(x: 0.0, y: viewPortHandler.contentTop)
+                
+                context.drawLinearGradient(gradient, start: startPoint, end: endPoint, options: .init(rawValue: 0))
+                context.restoreGState()
+                
                 // Set the color for the currently drawn value. If the index is out of bounds, reuse colors.
                 context.setFillColor(dataSet.color(atIndex: j).cgColor)
+            } else {
+                context.fill(barRect)
             }
             
-            context.fill(barRect)
+            
             
             if drawBorder
             {
